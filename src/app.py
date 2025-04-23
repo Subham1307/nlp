@@ -5,6 +5,8 @@ from pdf_processing.pdf_processor import PDFProcessor
 from text_extraction.gemini_extractor import GeminiExtractor, TextParser
 from utils.file_handler import FileHandler
 import tempfile
+import json
+from google import genai
 
 # Load environment variables
 load_dotenv()
@@ -67,6 +69,78 @@ def process_pdf(pdf_file, start_page, end_page, api_key, output_folder):
             
         finally:
             pdf_processor.close()
+
+class SentenceMapper:
+    def __init__(self, api_key):
+        self.client = genai.Client(api_key=api_key)
+    
+    def map_batch(self, hindi_batch, bengali_batch):
+        """Map a batch of Hindi and Bengali sentences"""
+        prompt = f"""Given these Hindi and Bengali sentences, map which Hindi sentence corresponds to which Bengali sentence.
+        Return the mapping as a JSON array of objects with 'hindi' and 'bengali' keys.
+        
+        Hindi sentences:
+        {hindi_batch}
+        
+        Bengali sentences:
+        {bengali_batch}
+        
+        Return only the JSON array, nothing else."""
+        
+        try:
+            response = self.client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=[prompt],
+            )
+            return response.text
+        except Exception as e:
+            st.error(f"Error in mapping batch: {str(e)}")
+            return []
+
+def map_sentences(hindi_texts, bengali_texts, api_key, batch_size=10, overlap=2):
+    """Map Hindi sentences to their Bengali translations using overlapping batches"""
+    mapper = SentenceMapper(api_key)
+    mappings = []
+    seen_pairs = set()  # To track already mapped pairs
+    
+    # Process texts in overlapping batches
+    for i in range(0, len(hindi_texts), batch_size - overlap):
+        hindi_batch = hindi_texts[i:i + batch_size]
+        bengali_batch = bengali_texts[i:i + batch_size]
+        
+        # Get mappings for this batch
+        batch_mappings = mapper.map_batch(hindi_batch, bengali_batch)
+        print(batch_mappings)
+        # Add only new mappings
+        raw = batch_mappings  # this is the str you printed
+        # 1) Strip whitespace
+        raw = raw.strip()
+
+        # 2) If it starts/ends with a Markdown fence, remove those lines
+        if raw.startswith("```"):
+            lines = raw.splitlines()
+            # drop the first line if it's a fence (``` or ```json)
+            if lines[0].startswith("```"):
+                lines.pop(0)
+            # drop the last line if it's a fence
+            if lines and lines[-1].startswith("```"):
+                lines.pop(-1)
+            raw = "\n".join(lines)
+
+        # 3) Now raw should be pure JSON, so parse it
+        batch_mappings = json.loads(raw)
+        print(type(batch_mappings))
+        for mapping in batch_mappings:
+            print("mapping is ")
+            print(mapping['hindi'])
+            print(mapping['bengali'])
+            pair_key = (mapping['hindi'], mapping['bengali'])
+            print(pair_key)
+            if pair_key not in seen_pairs:
+                seen_pairs.add(pair_key)
+                mappings.append(mapping)
+    
+    return mappings
 
 # Create two columns for Hindi and Bengali PDFs
 col1, col2 = st.columns(2)
@@ -151,7 +225,7 @@ if st.session_state.hindi_results or st.session_state.bengali_results:
     st.subheader("Extracted Text")
     
     # Create tabs for Hindi and Bengali results
-    tab1, tab2 = st.tabs(["Hindi Results", "Bengali Results"])
+    tab1, tab2, tab3 = st.tabs(["Hindi Results", "Bengali Results", "Sentence Mapping"])
     
     # Hindi Results
     with tab1:
@@ -219,4 +293,50 @@ if st.session_state.hindi_results or st.session_state.bengali_results:
                             mime="text/plain"
                         )
         else:
-            st.info("No Bengali PDF processed yet") 
+            st.info("No Bengali PDF processed yet")
+    
+    # Sentence Mapping
+    with tab3:
+        if st.session_state.hindi_results and st.session_state.bengali_results:
+            st.markdown("### Sentence Mapping")
+            
+            if st.button("Generate Sentence Mapping"):
+                with st.spinner("Generating sentence mappings..."):
+                    try:
+                        # Get API key
+                        api_key = os.getenv("GEMINI_API_KEY")
+                        if not api_key:
+                            st.error("GEMINI_API_KEY not found in environment variables")
+                            st.stop()
+                        
+                        # Get texts from both languages
+                        hindi_texts = st.session_state.hindi_results['texts']
+                        bengali_texts = st.session_state.bengali_results['texts']
+                        
+                        # Generate mappings
+                        mappings = map_sentences(hindi_texts, bengali_texts, api_key)
+                        
+                        # Display mappings
+                        for mapping in mappings:
+                            st.markdown("---")
+                            st.markdown("**Hindi:**")
+                            st.text(mapping['hindi'])
+                            st.markdown("**Bengali:**")
+                            st.text(mapping['bengali'])
+                        
+                        # Download mappings
+                        if st.button("Download Mappings"):
+                            with tempfile.NamedTemporaryFile(delete=False, suffix='.json') as tmp:
+                                json.dump(mappings, tmp, ensure_ascii=False, indent=2)
+                                
+                                with open(tmp.name, 'rb') as f:
+                                    st.download_button(
+                                        label="Download Sentence Mappings",
+                                        data=f,
+                                        file_name="sentence_mappings.json",
+                                        mime="application/json"
+                                    )
+                    except Exception as e:
+                        st.error(f"An error occurred during mapping: {str(e)}")
+        else:
+            st.info("Process both Hindi and Bengali PDFs to generate sentence mappings") 
