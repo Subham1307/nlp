@@ -1,12 +1,12 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-from pdf_processing.pdf_processor import PDFProcessor
-from text_extraction.gemini_extractor import GeminiExtractor, TextParser
 from utils.file_handler import FileHandler
+from agents.pdf_agent import PDFAgent
+from agents.text_extraction_agent import TextExtractionAgent
+from agents.mapping_agent import MappingAgent
 import tempfile
 import json
-from google import genai
 
 # Load environment variables
 load_dotenv()
@@ -31,116 +31,18 @@ if 'bengali_results' not in st.session_state:
     st.session_state.bengali_results = {}
 
 def process_pdf(pdf_file, start_page, end_page, api_key, output_folder):
-    """Process a PDF file and extract text from specified pages"""
-    # Create a temporary directory for processing
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Save uploaded file
-        pdf_path = os.path.join(temp_dir, "input.pdf")
-        with open(pdf_path, "wb") as f:
-            f.write(pdf_file.getvalue())
-        
-        # Initialize components
-        pdf_processor = PDFProcessor(pdf_path)
-        gemini_extractor = GeminiExtractor(api_key)
-        file_handler = FileHandler()
-        
-        # Create output directory
-        file_handler.ensure_directory_exists(output_folder)
-        
-        all_notes, all_texts = [], []
-        
-        try:
-            # Process each page
-            for page_number in range(start_page, end_page + 1):
-                st.info(f"Processing page {page_number}...")
-                
-                # Extract page as image
-                image_path = pdf_processor.extract_specific_page(page_number, output_folder)
-                
-                # Extract text using Gemini
-                raw_text = gemini_extractor.extract_text(image_path)
-                
-                # Parse the extracted text
-                notes, texts = TextParser.parse_sections(raw_text)
-                all_notes.extend(notes)
-                all_texts.extend(texts)
-            
-            return all_notes, all_texts
-            
-        finally:
-            pdf_processor.close()
-
-class SentenceMapper:
-    def __init__(self, api_key):
-        self.client = genai.Client(api_key=api_key)
+    """Process a PDF file using the agent-based architecture"""
+    # Initialize agents
+    pdf_agent = PDFAgent()
+    text_agent = TextExtractionAgent(api_key)
     
-    def map_batch(self, hindi_batch, bengali_batch):
-        """Map a batch of Hindi and Bengali sentences"""
-        prompt = f"""Given these Hindi and Bengali sentences, map which Hindi sentence corresponds to which Bengali sentence.
-        Return the mapping as a JSON array of objects with 'hindi' and 'bengali' keys.
-        
-        Hindi sentences:
-        {hindi_batch}
-        
-        Bengali sentences:
-        {bengali_batch}
-        
-        Return only the JSON array, nothing else."""
-        
-        try:
-            response = self.client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=[prompt],
-            )
-            return response.text
-        except Exception as e:
-            st.error(f"Error in mapping batch: {str(e)}")
-            return []
-
-def map_sentences(hindi_texts, bengali_texts, api_key, batch_size=10, overlap=2):
-    """Map Hindi sentences to their Bengali translations using overlapping batches"""
-    mapper = SentenceMapper(api_key)
-    mappings = []
-    seen_pairs = set()  # To track already mapped pairs
+    # Process PDF and get image paths
+    image_paths = pdf_agent.execute(pdf_file, start_page, end_page, output_folder)
     
-    # Process texts in overlapping batches
-    for i in range(0, len(hindi_texts), batch_size - overlap):
-        hindi_batch = hindi_texts[i:i + batch_size]
-        bengali_batch = bengali_texts[i:i + batch_size]
-        
-        # Get mappings for this batch
-        batch_mappings = mapper.map_batch(hindi_batch, bengali_batch)
-        print(batch_mappings)
-        # Add only new mappings
-        raw = batch_mappings  # this is the str you printed
-        # 1) Strip whitespace
-        raw = raw.strip()
-
-        # 2) If it starts/ends with a Markdown fence, remove those lines
-        if raw.startswith("```"):
-            lines = raw.splitlines()
-            # drop the first line if it's a fence (``` or ```json)
-            if lines[0].startswith("```"):
-                lines.pop(0)
-            # drop the last line if it's a fence
-            if lines and lines[-1].startswith("```"):
-                lines.pop(-1)
-            raw = "\n".join(lines)
-
-        # 3) Now raw should be pure JSON, so parse it
-        batch_mappings = json.loads(raw)
-        print(type(batch_mappings))
-        for mapping in batch_mappings:
-            print("mapping is ")
-            print(mapping['hindi'])
-            print(mapping['bengali'])
-            pair_key = (mapping['hindi'], mapping['bengali'])
-            print(pair_key)
-            if pair_key not in seen_pairs:
-                seen_pairs.add(pair_key)
-                mappings.append(mapping)
+    # Extract text from images
+    notes, texts = text_agent.execute(image_paths)
     
-    return mappings
+    return notes, texts
 
 # Create two columns for Hindi and Bengali PDFs
 col1, col2 = st.columns(2)
@@ -309,12 +211,15 @@ if st.session_state.hindi_results or st.session_state.bengali_results:
                             st.error("GEMINI_API_KEY not found in environment variables")
                             st.stop()
                         
+                        # Initialize mapping agent
+                        mapping_agent = MappingAgent(api_key)
+                        
                         # Get texts from both languages
                         hindi_texts = st.session_state.hindi_results['texts']
                         bengali_texts = st.session_state.bengali_results['texts']
                         
                         # Generate mappings
-                        mappings = map_sentences(hindi_texts, bengali_texts, api_key)
+                        mappings = mapping_agent.execute(hindi_texts, bengali_texts)
                         
                         # Display mappings
                         for mapping in mappings:
