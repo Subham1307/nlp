@@ -8,57 +8,66 @@ class TextExtractionAgent(BaseAgent):
     def __init__(self, api_key):
         super().__init__()
         self.client = genai.Client(api_key=api_key)
+        self.prompt = """
+Understand the layout of a textbook page, which may include boxes containing text.
+
+Your task:
+1. Extract all text including text inside boxes, don't extract texts from images like image marking.
+2. Delimit each boxed section with  
+   [START OF BOX]  
+   …box contents…  
+   [END OF BOX]
+3. Preserve the original reading order (left→right, top→bottom) strictly.
+4. In your output, include two main sections:
+
+   **NOTES:**  
+   - Text that appeared inside boxes.
+
+   **TEXTS:**  
+   - Text that appeared outside of boxes, one sentence per line, sentences are identified until '.' occurs, keep the sentences in <> 
+
+5. Remove unnecessary texts like page number, image marking.
+
+Your response should clearly reflect the layout and separation.
+"""
     
     def extract_text(self, image_path):
         """Extract text from an image using Gemini"""
         try:
-            with open(image_path, 'rb') as image_file:
-                image_data = image_file.read()
-            
+            uploaded_file = self.client.files.upload(file=image_path)
             response = self.client.models.generate_content(
                 model="gemini-2.0-flash",
-                contents=[{"parts": [{"text": "Extract all text from this image"}, {"inline_data": {"mime_type": "image/png", "data": image_data}}]}]
+                contents=[uploaded_file, self.prompt],
             )
             return response.text
         except Exception as e:
             self.log(f"Error extracting text: {str(e)}")
             return ""
     
-    def parse_sections(self, text):
-        """Parse extracted text into notes and regular text"""
-        notes = []
-        texts = []
+    def parse_sections(self, raw_text):
+        """Split raw output into notes and texts lists"""
+        notes, texts = [], []
+        in_box = False
         
-        # Split text into lines
-        lines = text.split('\n')
-        
-        # Process each line
-        current_note = []
-        current_text = []
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
+        for line in raw_text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[START OF BOX]"):
+                in_box = True
+                notes.append(stripped)
                 continue
-                
-            # Check if line is part of a note (box)
-            if re.match(r'^[□■▢▣▤▥▦▧▨▩]', line):
-                if current_text:
-                    texts.append(' '.join(current_text))
-                    current_text = []
-                current_note.append(line)
+            if stripped.startswith("[END OF BOX]"):
+                notes.append(stripped)
+                in_box = False
+                continue
+            # skip section headers
+            if stripped in {"**NOTES:**", "**TEXTS:**"} or not stripped:
+                continue
+            # collect
+            if in_box:
+                notes.append(stripped)
             else:
-                if current_note:
-                    notes.append(' '.join(current_note))
-                    current_note = []
-                current_text.append(line)
-        
-        # Add any remaining content
-        if current_note:
-            notes.append(' '.join(current_note))
-        if current_text:
-            texts.append(' '.join(current_text))
-        
+                texts.append(stripped)
+                
         return notes, texts
     
     def execute(self, image_paths):
