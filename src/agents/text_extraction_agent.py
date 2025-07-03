@@ -12,21 +12,11 @@ class TextExtractionAgent(BaseAgent):
 Understand the layout of a textbook page, which may include boxes containing text.
 
 Your task:
-1. Extract all text including text inside boxes; don't extract text from images or figure labels.
-2. Delimit each boxed section with  
-   [START OF BOX]  
-   …box contents…  
-   [END OF BOX]
-3. Preserve the original reading order (left→right, top→bottom) strictly.
-4. In your output, include two main sections:
-
-   **NOTES:**  
-   - Text that appeared inside boxes.
-
-   **TEXTS:**  
-   - Text that appeared outside of boxes.
-
-5. Remove unnecessary text like page numbers, figure labels, or watermarks.
+ Extract all sentence line by line, including text inside boxes; don't extract text from images or figure labels.
+ It should be a proper sentence, not just a word or phrase.
+ Preserve the original reading order (left→right, top→bottom) strictly.
+ Remove unnecessary text like page numbers, figure labels, or watermarks.
+ Don't preempt, just extract the sentences from the image.
 
 Your response should clearly reflect the layout and separation.
 """
@@ -36,7 +26,7 @@ Your response should clearly reflect the layout and separation.
         try:
             uploaded_file = self.client.files.upload(file=image_path)
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=[uploaded_file, self.prompt],
             )
             return response.text
@@ -44,37 +34,6 @@ Your response should clearly reflect the layout and separation.
             self.log(f"[TextExtractionAgent] Error extracting text from {image_path}: {e}")
             return ""
 
-    def parse_sections(self, raw_text: str) -> tuple[list[str], list[str]]:
-        """
-        Parse Gemini’s annotated text into two lists:
-        - notes: all lines that were inside [START OF BOX]…[END OF BOX]
-        - texts: all other lines
-        """
-        notes: list[str] = []
-        texts: list[str] = []
-        in_box = False
-
-        for line in raw_text.splitlines():
-            stripped = line.strip()
-            # detect start/end of boxed sections
-            if stripped.startswith("[START OF BOX]"):
-                in_box = True
-                notes.append(stripped)
-                continue
-            if stripped.startswith("[END OF BOX]"):
-                notes.append(stripped)
-                in_box = False
-                continue
-            # skip the section headers and empty lines
-            if stripped in {"**NOTES:**", "**TEXTS:**"} or not stripped:
-                continue
-            # append to the appropriate list
-            if in_box:
-                notes.append(stripped)
-            else:
-                texts.append(stripped)
-
-        return notes, texts
 
     def execute(self, image_paths: list[str]) -> list[dict]:
         """
@@ -82,12 +41,10 @@ Your response should clearly reflect the layout and separation.
         [
           {
             "page": 1,
-            "notes":   [...],   # boxed text lines for page 1
-            "texts":   [...]    # normal text lines for page 1
+            "texts":   [...]  # raw text extracted from the page
           },
           {
             "page": 2,
-            "notes":   [...],
             "texts":   [...]
           },
           ...
@@ -98,11 +55,10 @@ Your response should clearly reflect the layout and separation.
         for idx, image_path in enumerate(image_paths, start=1):
             self.log(f"[TextExtractionAgent] Extracting text from page {idx}: {image_path}")
             raw = self.extract_text(image_path)
-            notes, texts = self.parse_sections(raw)
+            print("raw text from page ",idx,"is ",raw)  # Debugging output
             pages.append({
                 "page": idx,
-                "notes": notes,
-                "texts": texts
+                "texts": raw
             })
 
         return pages

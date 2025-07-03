@@ -34,13 +34,13 @@ with col1:
     st.subheader("📄 Hindi PDF")
     hindi_file = st.file_uploader("Upload Hindi PDF", type="pdf", key="hindi_pdf")
     hindi_start = st.number_input("Start Page", min_value=1, value=1, key="hindi_start")
-    hindi_end   = st.number_input("End Page",   min_value=hindi_start, value=hindi_start, key="hindi_end")
+    hindi_end = st.number_input("End Page", min_value=hindi_start, value=hindi_start, key="hindi_end")
 
 with col2:
     st.subheader("📄 Bengali PDF")
     bengali_file = st.file_uploader("Upload Bengali PDF", type="pdf", key="bengali_pdf")
     bengali_start = st.number_input("Start Page", min_value=1, value=1, key="bengali_start")
-    bengali_end   = st.number_input("End Page",   min_value=bengali_start, value=bengali_start, key="bengali_end")
+    bengali_end = st.number_input("End Page", min_value=bengali_start, value=bengali_start, key="bengali_end")
 
 # — Process & Map button —
 if st.button("🚀 Process & Map"):
@@ -54,8 +54,8 @@ if st.button("🚀 Process & Map"):
 
     with st.spinner("Extracting and mapping…"):
         # 1) Extract pages from PDFs
-        pdf_agent   = PDFAgent()
-        text_agent  = TextExtractionAgent(API_KEY)
+        pdf_agent = PDFAgent()
+        text_agent = TextExtractionAgent(API_KEY)
         mapping_agent = MappingAgent(API_KEY)
 
         # Hindi pages
@@ -66,7 +66,7 @@ if st.button("🚀 Process & Map"):
             output_folder="hindi_pages"
         )
         hindi_pages = text_agent.execute(hindi_images)
-        print(hindi_pages)
+
         # Bengali pages
         bengali_images = pdf_agent.execute(
             pdf_file=bengali_file,
@@ -75,22 +75,36 @@ if st.button("🚀 Process & Map"):
             output_folder="bengali_pages"
         )
         bengali_pages = text_agent.execute(bengali_images)
-        print(bengali_pages)
 
-        # 2) Run page‐wise mapping
+    # — Display extracted Hindi text —
+    with st.expander("📝 Extracted Hindi Text", expanded=False):
+        for i, text in enumerate(hindi_pages, start=hindi_start):
+            st.markdown(f"**Page {i}:**")
+            st.write(text)
+            st.markdown("---")
+
+    # — Display extracted Bengali text —
+    with st.expander("📝 Extracted Bengali Text", expanded=False):
+        for i, text in enumerate(bengali_pages, start=bengali_start):
+            st.markdown(f"**Page {i}:**")
+            st.write(text)
+            st.markdown("---")
+
+    with st.spinner("Running sentence mapping…"):
         page_mappings = mapping_agent.execute(hindi_pages, bengali_pages)
 
-    # — Display results —
+    # Display results
     st.success("✅ Mapping complete!")
     for page_info in page_mappings:
         page_no = page_info["page"]
-        with st.expander(f"Page {page_no} mappings", expanded=False):
+        with st.expander(f"📄 Page {page_no} Mappings", expanded=False):
             for m in page_info["mappings"]:
                 st.markdown("**Hindi:**")
                 st.write(m["hindi"])
                 st.markdown("**Bengali:**")
                 st.write(m["bengali"])
                 st.markdown("---")
+
 
     # — Download JSON —
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:

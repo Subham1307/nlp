@@ -1,4 +1,5 @@
 import json
+import re
 from .base_agent import BaseAgent
 from google import genai
 
@@ -9,24 +10,70 @@ class MappingAgent(BaseAgent):
         super().__init__()
         self.client = genai.Client(api_key=api_key)
 
+    def _normalize_text(self, text: str) -> str:
+        """
+        Removes excessive spaces between characters while preserving word boundaries.
+        Example: "अ प न े   द ै न ि क   ज ी व न" → "अपने दैनिक जीवन"
+        """
+        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r'(\S)\s(?=\S)', r'\1', text)
+        return text.strip()
+
+    def _clean_and_parse(self, raw: str) -> list[dict]:
+        """
+        Cleans Gemini's raw output by stripping markdown fences and parsing JSON safely.
+        """
+        txt = raw.strip()
+
+        if txt.startswith("```"):
+            lines = txt.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines.pop(0)
+            if lines and lines[-1].startswith("```"):
+                lines.pop(-1)
+            txt = "\n".join(lines)
+
+        try:
+            data = json.loads(txt)
+        except Exception as e:
+            self.log(f"[MappingAgent] JSON parse failed: {e}\nRaw response:\n{txt}")
+            return []
+
+        for item in data:
+            item["hindi"] = self._normalize_text(item.get("hindi", ""))
+            item["bengali"] = self._normalize_text(item.get("bengali", ""))
+
+        return data
+
     def map_full_text(self, hindi_para: str, bengali_para: str) -> str:
         """
-        Ask Gemini to map each Hindi sentence in hindi_para to its Bengali translation(s)
-        in bengali_para, combining multiple Bengali sentences if needed, and returning NA
-        when no match is found.
+        Ask Gemini to map each Hindi sentence to Bengali translation(s).
         """
-        prompt = f"""
-You will be given two paragraphs: one containing Hindi sentences and the other containing Bengali sentences.
-Think step by step : 
-First understand the Hindi sentence, from where a sentence starts and where it ends. This is our target sentence.
-Now from the bengali paragraph, find which part is the translation of out target hindi sentence, combine all them in a single string.
-Go to next Hindi sentence, and keep doing this 
-Dont give same sentence twice
-If no translation exists, return "NA".
+        print("Hindi paragraph in mapping:\n", hindi_para)
+        print("Bengali paragraph in mapping:\n", bengali_para)
 
-Return only a JSON array of objects with keys:
-- "hindi": the Hindi sentence
-- "bengali": the combined Bengali sentence(s) or "NA"
+        prompt = f"""
+You will be given two paragraphs:
+- One in Hindi containing multiple sentences.
+- One in Bengali containing multiple sentences.
+
+Your task is:
+1. Carefully identify each complete Hindi sentence, one by one.
+2. For each Hindi sentence, find the Bengali sentence(s) that convey the same meaning.
+   - Sometimes one Bengali sentence matches a Hindi sentence.
+   - Sometimes multiple Bengali sentences together match a single Hindi sentence.
+   - If no matching Bengali translation exists, return "NA".
+3. Do not assume sentence order is identical.
+4. Avoid repeating the same Bengali sentence for multiple mappings.
+5. Be strict: only map sentences that actually carry equivalent meaning, not just similar words.
+
+Return output strictly as JSON array:
+```json
+[
+  {{ "hindi": "<Hindi Sentence>", "bengali": "<Bengali Translation or NA>" }},
+  ...
+]
+```
 
 Hindi paragraph:
 {hindi_para}
@@ -36,71 +83,42 @@ Bengali paragraph:
 """
         try:
             resp = self.client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=[prompt],
             )
+            print("Response after mapping:\n", resp.text)
             return resp.text
         except Exception as e:
             self.log(f"[MappingAgent] Error during mapping call: {e}")
             return ""
 
-    def _clean_and_parse(self, raw: str) -> list[dict]:
-        """
-        Strip markdown code fences if present, then parse JSON.
-        """
-        txt = raw.strip()
-        if txt.startswith("```"):
-            lines = txt.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines.pop(0)
-            if lines and lines[-1].startswith("```"):
-                lines.pop(-1)
-            txt = "\n".join(lines)
-        return json.loads(txt)
-
     def execute(self, hindi_pages: list[dict], bengali_pages: list[dict]) -> list[dict]:
         """
-        Perform page-wise mapping. Inputs:
-          hindi_pages: [
-            { "page": 1, "texts": [...], "notes": [...] },
-            { "page": 2, ... }, ...
-          ]
-          bengali_pages: same shape for Bengali.
-
-        Returns:
-          [
-            {
-              "page": 1,
-              "mappings": [
-                  { "hindi": "...", "bengali": "..." }, …
-              ]
-            },
-            ...
-          ]
+        Perform page-wise mapping and return structured results.
         """
         results = []
 
         for h_pg, b_pg in zip(hindi_pages, bengali_pages):
             page_no = h_pg["page"]
-            # combine only the TEXTS for mapping; include 'notes' if desired
+
             hi_para = " ".join(h_pg["texts"])
             be_para = " ".join(b_pg["texts"])
 
             self.log(f"[MappingAgent] Mapping page {page_no}")
+
             raw = self.map_full_text(hi_para, be_para)
+            mappings = self._clean_and_parse(raw)
+            print("Raw mappings after Gemini call:", mappings)
+            # seen_hi = {self._normalize_text(m.get("hindi", "")) for m in mappings}
 
-            try:
-                mappings = self._clean_and_parse(raw)
-            except Exception as e:
-                self.log(f"[MappingAgent] JSON parse error on page {page_no}: {e}")
-                mappings = []
-
-            # Ensure every Hindi sentence gets a mapping (NA if missing)
-            seen_hi = {m["hindi"] for m in mappings}
-            for sentence in h_pg["texts"]:
-                if sentence not in seen_hi:
-                    mappings.append({ "hindi": sentence, "bengali": "NA" })
-
+            # for sentence in h_pg["texts"]:
+            #     sentence_clean = self._normalize_text(sentence)
+            #     if sentence_clean not in seen_hi:
+            #         mappings.append({
+            #             "hindi": sentence_clean,
+            #             "bengali": "NA"
+            #         })
+            # print("Mappings for page:", mappings)
             results.append({
                 "page": page_no,
                 "mappings": mappings
