@@ -11,10 +11,7 @@ class MappingAgent(BaseAgent):
         self.client = genai.Client(api_key=api_key)
 
     def _normalize_text(self, text: str) -> str:
-        """
-        Removes excessive spaces between characters while preserving word boundaries.
-        Example: "अ प न े   द ै न ि क   ज ी व न" → "अपने दैनिक जीवन"
-        """
+        
         text = re.sub(r'\s+', ' ', text)
         text = re.sub(r'(\S)\s(?=\S)', r'\1', text)
         return text.strip()
@@ -46,9 +43,6 @@ class MappingAgent(BaseAgent):
         return data
 
     def map_full_text(self, hindi_para: str, bengali_para: str) -> str:
-        """
-        Ask Gemini to map each Hindi sentence to Bengali translation(s).
-        """
         print("Hindi paragraph in mapping:\n", hindi_para)
         print("Bengali paragraph in mapping:\n", bengali_para)
 

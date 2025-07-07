@@ -107,14 +107,16 @@ if st.button("🚀 Process & Map"):
 
 
     # — Download JSON —
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as tmp:
         json.dump(page_mappings, tmp, ensure_ascii=False, indent=2)
         tmp_path = tmp.name
 
     with open(tmp_path, "rb") as f:
-        st.download_button(
-            label="💾 Download Mappings (JSON)",
-            data=f,
-            file_name="sentence_mappings.json",
-            mime="application/json"
-        )
+        file_bytes = f.read()
+
+    st.download_button(
+        label="💾 Download Mappings (JSON)",
+        data=file_bytes,
+        file_name="sentence_mappings.json",
+        mime="application/json"
+    )

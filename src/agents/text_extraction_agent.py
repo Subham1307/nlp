@@ -3,8 +3,6 @@ from .base_agent import BaseAgent
 from google import genai
 
 class TextExtractionAgent(BaseAgent):
-    """Agent responsible for text extraction from images, with page tagging."""
-
     def __init__(self, api_key):
         super().__init__()
         self.client = genai.Client(api_key=api_key)
