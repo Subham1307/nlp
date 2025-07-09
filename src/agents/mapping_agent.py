@@ -11,7 +11,6 @@ class MappingAgent(BaseAgent):
         self.client = genai.Client(api_key=api_key)
 
     def _normalize_text(self, text: str) -> str:
-        
         text = re.sub(r'\s+', ' ', text)
         text = re.sub(r'(\S)\s(?=\S)', r'\1', text)
         return text.strip()
@@ -43,44 +42,57 @@ class MappingAgent(BaseAgent):
         return data
 
     def map_full_text(self, hindi_para: str, bengali_para: str) -> str:
-        print("Hindi paragraph in mapping:\n", hindi_para)
-        print("Bengali paragraph in mapping:\n", bengali_para)
-
         prompt = f"""
+**Task Description:**
+You are an expert in **Hindi** and **Bengali** languages. 
 You will be given two paragraphs:
-- One in Hindi containing multiple sentences.
-- One in Bengali containing multiple sentences.
 
-Your task is:
-1. Carefully identify each complete Hindi sentence, one by one.
-2. For each Hindi sentence, find the Bengali sentence(s) that convey the same meaning.
-   - Sometimes one Bengali sentence matches a Hindi sentence.
-   - Sometimes multiple Bengali sentences together match a single Hindi sentence.
-   - If no matching Bengali translation exists, return "NA".
-3. Do not assume sentence order is identical.
-4. Avoid repeating the same Bengali sentence for multiple mappings.
-5. Be strict: only map sentences that actually carry equivalent meaning, not just similar words.
+* One in **Hindi** containing multiple sentences.
+* One in **Bengali** containing multiple sentences.
 
-Return output strictly as JSON array:
+---
+
+### ✅ Your Task:
+
+1. Carefully identify **each complete Hindi sentence**, one by one.
+2. For **each Hindi sentence**, find the Bengali sentence(s) that convey the **same meaning**.
+
+   * Sometimes **one Bengali sentence** matches a Hindi sentence.
+   * Sometimes **multiple Bengali sentences together** match a single Hindi sentence.
+   * If **no matching Bengali translation** exists, return \"NA\".
+3. **Do not assume** sentence order is identical.
+4. **Avoid repeating** the same Bengali sentence for multiple mappings.
+5. Be **strict**: only map sentences that **actually carry equivalent meaning**, not just similar words.
+6. Return the sentences in **proper format with spacing and punctuation**.
+
+---
+
+### 🔢 Return Format:
+
+Return output strictly as a JSON array:
+
 ```json
 [
-  {{ "hindi": "<Hindi Sentence>", "bengali": "<Bengali Translation or NA>" }},
-  ...
+  {{ "hindi": "<Hindi Sentence>", "bengali": "<Bengali Translation or NA>" }}
 ]
 ```
 
-Hindi paragraph:
+---
+
+### 📄 Input:
+
+**Hindi paragraph:**
 {hindi_para}
 
-Bengali paragraph:
+**Bengali paragraph:**
 {bengali_para}
+
 """
         try:
             resp = self.client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=[prompt],
             )
-            print("Response after mapping:\n", resp.text)
             return resp.text
         except Exception as e:
             self.log(f"[MappingAgent] Error during mapping call: {e}")
@@ -102,17 +114,7 @@ Bengali paragraph:
 
             raw = self.map_full_text(hi_para, be_para)
             mappings = self._clean_and_parse(raw)
-            print("Raw mappings after Gemini call:", mappings)
-            # seen_hi = {self._normalize_text(m.get("hindi", "")) for m in mappings}
 
-            # for sentence in h_pg["texts"]:
-            #     sentence_clean = self._normalize_text(sentence)
-            #     if sentence_clean not in seen_hi:
-            #         mappings.append({
-            #             "hindi": sentence_clean,
-            #             "bengali": "NA"
-            #         })
-            # print("Mappings for page:", mappings)
             results.append({
                 "page": page_no,
                 "mappings": mappings

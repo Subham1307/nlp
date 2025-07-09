@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 
 from utils.file_handler import FileHandler
 from agents.pdf_agent import PDFAgent
-from agents.text_extraction_agent import TextExtractionAgent
+from agents.bengali_text_extraction_agent import BengaliTextExtractionAgent
+from agents.hindi_text_extraction_agent import HindiTextExtractionAgent
 from agents.mapping_agent import MappingAgent
 
 # === Load environment ===
@@ -55,7 +56,8 @@ if st.button("🚀 Process & Map"):
     with st.spinner("Extracting and mapping…"):
         # 1) Extract pages from PDFs
         pdf_agent = PDFAgent()
-        text_agent = TextExtractionAgent(API_KEY)
+        bengali_text_agent = BengaliTextExtractionAgent(API_KEY)
+        hindi_text_agent = HindiTextExtractionAgent(API_KEY)
         mapping_agent = MappingAgent(API_KEY)
 
         # Hindi pages
@@ -65,7 +67,8 @@ if st.button("🚀 Process & Map"):
             end_page=hindi_end,
             output_folder="hindi_pages"
         )
-        hindi_pages = text_agent.execute(hindi_images)
+        hindi_pages = hindi_text_agent.execute(hindi_images)
+        print("Hindi pages extracted:", hindi_pages)
 
         # Bengali pages
         bengali_images = pdf_agent.execute(
@@ -74,39 +77,67 @@ if st.button("🚀 Process & Map"):
             end_page=bengali_end,
             output_folder="bengali_pages"
         )
-        bengali_pages = text_agent.execute(bengali_images)
+        bengali_pages = bengali_text_agent.execute(bengali_images)
+        print("Bengali pages extracted:", bengali_pages)
 
     # — Display extracted Hindi text —
     with st.expander("📝 Extracted Hindi Text", expanded=False):
-        for i, text in enumerate(hindi_pages, start=hindi_start):
-            st.markdown(f"**Page {i}:**")
-            st.write(text)
+        hindi_combined = ""
+        for page in hindi_pages:
+            page_no = page["page"]
+            texts = page["texts"]
+            st.markdown(f"**Page {page_no}:**")
+            for sentence in texts:
+                st.write(sentence)
             st.markdown("---")
+            hindi_combined += f"Page {page_no}:\n" + "\n".join(texts) + "\n\n"
 
     # — Display extracted Bengali text —
     with st.expander("📝 Extracted Bengali Text", expanded=False):
-        for i, text in enumerate(bengali_pages, start=bengali_start):
-            st.markdown(f"**Page {i}:**")
-            st.write(text)
+        bengali_combined = ""
+        for page in bengali_pages:
+            page_no = page["page"]
+            texts = page["texts"]
+            st.markdown(f"**Page {page_no}:**")
+            for sentence in texts:
+                st.write(sentence)
             st.markdown("---")
+            bengali_combined += f"Page {page_no}:\n" + "\n".join(texts) + "\n\n"
+
+    # — Download buttons for extracted texts —
+    st.download_button(
+        label="🗕️ Download Extracted Hindi Text",
+        data=hindi_combined,
+        file_name="extracted_hindi.txt",
+        mime="text/plain"
+    )
+
+    st.download_button(
+        label="🗕️ Download Extracted Bengali Text",
+        data=bengali_combined,
+        file_name="extracted_bengali.txt",
+        mime="text/plain"
+    )
 
     with st.spinner("Running sentence mapping…"):
         page_mappings = mapping_agent.execute(hindi_pages, bengali_pages)
 
-    # Display results
+    # Display results side by side
     st.success("✅ Mapping complete!")
     for page_info in page_mappings:
         page_no = page_info["page"]
         with st.expander(f"📄 Page {page_no} Mappings", expanded=False):
             for m in page_info["mappings"]:
-                st.markdown("**Hindi:**")
-                st.write(m["hindi"])
-                st.markdown("**Bengali:**")
-                st.write(m["bengali"])
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**🇨🇳 Hindi**")
+                    st.write(m["hindi"])
+                with col2:
+                    st.markdown("**🅱️ Bengali**")
+                    st.write(m["bengali"])
                 st.markdown("---")
 
-
-    # — Download JSON —
+    # — Download Mappings JSON —
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as tmp:
         json.dump(page_mappings, tmp, ensure_ascii=False, indent=2)
         tmp_path = tmp.name
@@ -115,7 +146,7 @@ if st.button("🚀 Process & Map"):
         file_bytes = f.read()
 
     st.download_button(
-        label="💾 Download Mappings (JSON)",
+        label="🗕️ Download Mappings (JSON)",
         data=file_bytes,
         file_name="sentence_mappings.json",
         mime="application/json"

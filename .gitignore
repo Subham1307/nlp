@@ -1,7 +1,6 @@
-bengali_pages
-hindi_pages
-gemini_bengali_output
-gemini_hindi_output
+bengali_pages/
+hindi_pages/
 .env
 venv
 *.pdf
+*.png
