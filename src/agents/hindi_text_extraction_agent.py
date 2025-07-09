@@ -15,7 +15,6 @@ Understand the layout of a textbook page written in **Hindi**, which may include
 ### ✅ Your Task:
 
 * Extract **all Hindi sentences**, **line by line**, exactly as they appear.
-* Include **text inside boxes**, but place them **at the end** of the extraction.
 * **Do not** extract text from **images** or **figure labels**.
 * Extract only **complete sentences**, **not just words or phrases**.
 * Preserve the **original reading order**:
@@ -33,7 +32,7 @@ Understand the layout of a textbook page written in **Hindi**, which may include
 * Interpret, summarize, or rephrase any content.
 * Add or assume anything that is not present in the image.
 * Extract partial or out-of-context words except at the end of the page there might be some words.
-* Return anything other than hindi sentences like "here are the hindi senteces" or "here are the senteces in box"
+* Return anything other than hindi sentences like "here are the hindi senteces" or "here are the senteces in box" or "texts from box"
 
 ---
 

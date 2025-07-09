@@ -10,11 +10,6 @@ class MappingAgent(BaseAgent):
         super().__init__()
         self.client = genai.Client(api_key=api_key)
 
-    def _normalize_text(self, text: str) -> str:
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'(\S)\s(?=\S)', r'\1', text)
-        return text.strip()
-
     def _clean_and_parse(self, raw: str) -> list[dict]:
         """
         Cleans Gemini's raw output by stripping markdown fences and parsing JSON safely.
@@ -36,8 +31,8 @@ class MappingAgent(BaseAgent):
             return []
 
         for item in data:
-            item["hindi"] = self._normalize_text(item.get("hindi", ""))
-            item["bengali"] = self._normalize_text(item.get("bengali", ""))
+            item["hindi"] = item.get("hindi", "")
+            item["bengali"] = item.get("bengali", "")
 
         return data
 
@@ -111,8 +106,9 @@ Return output strictly as a JSON array:
             be_para = " ".join(b_pg["texts"])
 
             self.log(f"[MappingAgent] Mapping page {page_no}")
-
+            print("Text in mapping agent:", hi_para, be_para)
             raw = self.map_full_text(hi_para, be_para)
+            print("Raw response from Gemini:", raw)
             mappings = self._clean_and_parse(raw)
 
             results.append({

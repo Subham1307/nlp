@@ -1,6 +1,7 @@
 import os
 import json
 import tempfile
+import pandas as pd
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -68,7 +69,6 @@ if st.button("🚀 Process & Map"):
             output_folder="hindi_pages"
         )
         hindi_pages = hindi_text_agent.execute(hindi_images)
-        print("Hindi pages extracted:", hindi_pages)
 
         # Bengali pages
         bengali_images = pdf_agent.execute(
@@ -78,7 +78,6 @@ if st.button("🚀 Process & Map"):
             output_folder="bengali_pages"
         )
         bengali_pages = bengali_text_agent.execute(bengali_images)
-        print("Bengali pages extracted:", bengali_pages)
 
     # — Display extracted Hindi text —
     with st.expander("📝 Extracted Hindi Text", expanded=False):
@@ -150,4 +149,25 @@ if st.button("🚀 Process & Map"):
         data=file_bytes,
         file_name="sentence_mappings.json",
         mime="application/json"
+    )
+
+    # — Download Mappings CSV —
+    csv_rows = []
+    for page_info in page_mappings:
+        page_no = page_info["page"]
+        for m in page_info["mappings"]:
+            csv_rows.append({
+                "Page": page_no,
+                "Hindi": m["hindi"],
+                "Bengali": m["bengali"]
+            })
+
+    df_mappings = pd.DataFrame(csv_rows)
+    csv_data = df_mappings.to_csv(index=False)
+
+    st.download_button(
+        label="🗕️ Download Mappings (CSV)",
+        data=csv_data,
+        file_name="sentence_mappings.csv",
+        mime="text/csv"
     )
