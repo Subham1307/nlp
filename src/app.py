@@ -46,7 +46,6 @@ with col2:
 
 # — Process & Map button —
 if st.button("🚀 Process & Map"):
-    # Validate inputs
     if not API_KEY:
         st.error("GEMINI_API_KEY not set in environment")
         st.stop()
@@ -55,13 +54,11 @@ if st.button("🚀 Process & Map"):
         st.stop()
 
     with st.spinner("Extracting and mapping…"):
-        # 1) Extract pages from PDFs
         pdf_agent = PDFAgent()
         bengali_text_agent = BengaliTextExtractionAgent(API_KEY)
         hindi_text_agent = HindiTextExtractionAgent(API_KEY)
         mapping_agent = MappingAgent(API_KEY)
 
-        # Hindi pages
         hindi_images = pdf_agent.execute(
             pdf_file=hindi_file,
             start_page=hindi_start,
@@ -70,7 +67,6 @@ if st.button("🚀 Process & Map"):
         )
         hindi_pages = hindi_text_agent.execute(hindi_images)
 
-        # Bengali pages
         bengali_images = pdf_agent.execute(
             pdf_file=bengali_file,
             start_page=bengali_start,
@@ -79,7 +75,6 @@ if st.button("🚀 Process & Map"):
         )
         bengali_pages = bengali_text_agent.execute(bengali_images)
 
-    # — Display extracted Hindi text —
     with st.expander("📝 Extracted Hindi Text", expanded=False):
         hindi_combined = ""
         for page in hindi_pages:
@@ -91,7 +86,6 @@ if st.button("🚀 Process & Map"):
             st.markdown("---")
             hindi_combined += f"Page {page_no}:\n" + "\n".join(texts) + "\n\n"
 
-    # — Display extracted Bengali text —
     with st.expander("📝 Extracted Bengali Text", expanded=False):
         bengali_combined = ""
         for page in bengali_pages:
@@ -103,25 +97,9 @@ if st.button("🚀 Process & Map"):
             st.markdown("---")
             bengali_combined += f"Page {page_no}:\n" + "\n".join(texts) + "\n\n"
 
-    # — Download buttons for extracted texts —
-    st.download_button(
-        label="🗕️ Download Extracted Hindi Text",
-        data=hindi_combined,
-        file_name="extracted_hindi.txt",
-        mime="text/plain"
-    )
-
-    st.download_button(
-        label="🗕️ Download Extracted Bengali Text",
-        data=bengali_combined,
-        file_name="extracted_bengali.txt",
-        mime="text/plain"
-    )
-
     with st.spinner("Running sentence mapping…"):
         page_mappings = mapping_agent.execute(hindi_pages, bengali_pages)
 
-    # Display results side by side
     st.success("✅ Mapping complete!")
     for page_info in page_mappings:
         page_no = page_info["page"]
@@ -129,29 +107,14 @@ if st.button("🚀 Process & Map"):
             for m in page_info["mappings"]:
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.markdown("**🇨🇳 Hindi**")
+                    st.markdown("**🇨🄳 Hindi**")
                     st.write(m["hindi"])
                 with col2:
                     st.markdown("**🅱️ Bengali**")
                     st.write(m["bengali"])
                 st.markdown("---")
 
-    # — Download Mappings JSON —
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as tmp:
-        json.dump(page_mappings, tmp, ensure_ascii=False, indent=2)
-        tmp_path = tmp.name
-
-    with open(tmp_path, "rb") as f:
-        file_bytes = f.read()
-
-    st.download_button(
-        label="🗕️ Download Mappings (JSON)",
-        data=file_bytes,
-        file_name="sentence_mappings.json",
-        mime="application/json"
-    )
-
-    # — Download Mappings CSV —
+    # Save to session_state
     csv_rows = []
     for page_info in page_mappings:
         page_no = page_info["page"]
@@ -163,10 +126,47 @@ if st.button("🚀 Process & Map"):
             })
 
     df_mappings = pd.DataFrame(csv_rows)
-    csv_data = df_mappings.to_csv(index=False)
+
+    st.session_state["hindi_combined"] = hindi_combined
+    st.session_state["bengali_combined"] = bengali_combined
+    st.session_state["page_mappings"] = page_mappings
+    st.session_state["df_mappings"] = df_mappings
+
+# === Download buttons outside rerun scope ===
+if "page_mappings" in st.session_state:
+    st.subheader("📅 Download Your Results")
 
     st.download_button(
-        label="🗕️ Download Mappings (CSV)",
+        label="🗅️ Download Extracted Hindi Text",
+        data=st.session_state["hindi_combined"],
+        file_name="extracted_hindi.txt",
+        mime="text/plain"
+    )
+
+    st.download_button(
+        label="🗅️ Download Extracted Bengali Text",
+        data=st.session_state["bengali_combined"],
+        file_name="extracted_bengali.txt",
+        mime="text/plain"
+    )
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as tmp:
+        json.dump(st.session_state["page_mappings"], tmp, ensure_ascii=False, indent=2)
+        tmp_path = tmp.name
+
+    with open(tmp_path, "rb") as f:
+        file_bytes = f.read()
+
+    st.download_button(
+        label="🗅️ Download Mappings (JSON)",
+        data=file_bytes,
+        file_name="sentence_mappings.json",
+        mime="application/json"
+    )
+
+    csv_data = st.session_state["df_mappings"].to_csv(index=False)
+    st.download_button(
+        label="🗅️ Download Mappings (CSV)",
         data=csv_data,
         file_name="sentence_mappings.csv",
         mime="text/csv"
